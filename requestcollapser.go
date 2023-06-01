@@ -21,45 +21,64 @@ type (
 		err    error
 	}
 
+	// RequestCollapser allows to collapse multiple requests into one batch request.
 	RequestCollapser[T any, P comparable] struct {
-		batchCommand              func(context.Context, []*P) (map[P]*T, error)
-		fallbackCommand           func(context.Context, *P) (*T, error)
-		deepCopyCommand           func(*T) (*T, error)
-		intervalInMilis           int64
-		maxBatchSize              int
-		collapserRequestsChannel  chan *collapserRequest[T, P]
+		// Command to be executed in batch
+		batchCommand func(context.Context, []*P) (map[P]*T, error)
+		// Command to be executed in case of batch command failure
+		fallbackCommand func(context.Context, *P) (*T, error)
+		// Command to be executed to deep copy the result of batch command
+		deepCopyCommand func(*T) (*T, error)
+		// Interval in milliseconds to trigger the batch command
+		intervalInMilis int64
+		// Maximum number of requests to be batched together before triggering the batch command
+		maxBatchSize int
+		// Channel to accept requests
+		collapserRequestsChannel chan *collapserRequest[T, P]
+		// Channel to notify the processor that there are requests in the batch to be processed
 		requestsProcessorNotifier chan *[]*collapserRequest[T, P]
-		requestsBatch             *[]*collapserRequest[T, P]
-		requestsBatchMutex        *sync.RWMutex
+		// Slice of requests to be batched together
+		requestsBatch *[]*collapserRequest[T, P]
+		// Mutex to protect the batch of requests
+		requestsBatchMutex *sync.RWMutex
+		// Max time to wait for the batch command to complete
 		batchCommandCancelTimeout time.Duration
-		diagnosticsEnabled        bool
-		shouldStop                atomic.Bool
+		// Flag to enable/disable diagnostics
+		diagnosticsEnabled bool
+		// Flag to stop the collapser
+		shouldStop atomic.Bool
 	}
 )
 
 const (
+	// Max timeout for batch command
 	MAX_BATCH_TIMEOUT = time.Duration(2147483647) * time.Millisecond
-	MAX_QUEUE_SIZE    = 2147483647
+	// Max queue size for requests to be batched
+	MAX_QUEUE_SIZE = 2147483647
 )
 
-func (m *RequestCollapser[T, P]) withFallbackCommand(fallbackCommand func(ctx context.Context, param *P) (*T, error)) {
+// Provides the fallback command to be executed in case of batch command failure
+func (m *RequestCollapser[T, P]) WithFallbackCommand(fallbackCommand func(ctx context.Context, param *P) (*T, error)) {
 	m.fallbackCommand = fallbackCommand
 }
 
-func (m *RequestCollapser[T, P]) withDeepCopyCommand(deepCopyCommand func(source *T) (*T, error)) {
+// Provides the command to be executed to deep copy the result of batch command
+func (m *RequestCollapser[T, P]) WithDeepCopyCommand(deepCopyCommand func(source *T) (*T, error)) {
 	if deepCopyCommand != nil {
 		m.deepCopyCommand = deepCopyCommand
 	}
 }
 
-func (m *RequestCollapser[T, P]) withMaxBatchSize(maxBatchSize int) {
+// Provides the limit of requests to be batched together before triggering the batch command
+func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) {
 	if maxBatchSize > 0 {
 		m.collapserRequestsChannel = make(chan *collapserRequest[T, P], maxBatchSize)
 		m.maxBatchSize = maxBatchSize
 	}
 }
 
-func (m *RequestCollapser[T, P]) withBatchCommandCancelTimeout(batchCommandCancelTimeoutMillis int64) {
+// Provides the max time to wait for the batch command to complete
+func (m *RequestCollapser[T, P]) WithBatchCommandCancelTimeout(batchCommandCancelTimeoutMillis int64) {
 	var batchTimeout time.Duration
 	if batchCommandCancelTimeoutMillis <= 0 {
 		batchTimeout = MAX_BATCH_TIMEOUT
@@ -69,10 +88,12 @@ func (m *RequestCollapser[T, P]) withBatchCommandCancelTimeout(batchCommandCance
 	m.batchCommandCancelTimeout = batchTimeout
 }
 
-func (m *RequestCollapser[T, P]) withDiagnosticEnabled(diagnosticsEnabled bool) {
+// Provides the diagnostics flag. If set, logs will be printed to stdout
+func (m *RequestCollapser[T, P]) WithDiagnosticEnabled(diagnosticsEnabled bool) {
 	m.diagnosticsEnabled = diagnosticsEnabled
 }
 
+// Starts the collapser: starts the request acceptor, request processor ticker and request processor
 func (m *RequestCollapser[T, P]) Start() {
 	// go routine that runs in perpetual loop, accepts requests and adds them to the batch,
 	// can also (if configured) trigger the processor if the batch is full
@@ -81,14 +102,18 @@ func (m *RequestCollapser[T, P]) Start() {
 	m.startRequestProcessorTicker()
 	// go routine that runs in perpetual loop and processes the batch once notified with the batch
 	m.startRequestProcessor()
+	m.log("RequestCollapser::Start - collapser started")
 }
 
+// Stops the collapser: stops the request acceptor, request processor ticker and request processor
 func (m *RequestCollapser[T, P]) Stop() {
 	m.shouldStop.Store(true)
 	m.collapserRequestsChannel <- nil
 	m.requestsProcessorNotifier <- nil
+	m.log("RequestCollapser::Stop - collapser stopped")
 }
 
+// Creates a new RequestCollapser instance
 func NewRequestCollapser[T any, P comparable](
 	batchCommand func(ctx context.Context, params []*P) (map[P]*T, error),
 	batchCommandIntervalMillis int64,
@@ -124,12 +149,12 @@ func jsonMarshalDeepCopyCommand[T any](source *T) (*T, error) {
 	return &replicant, err
 }
 
-// Get sends a request to the collapser and waits for the result /**
+// Get sends a request to the collapser and waits for the result
 func (m *RequestCollapser[T, P]) Get(ctx context.Context, param P) (*T, error) {
 	return m.doGet(ctx, param, MAX_BATCH_TIMEOUT)
 }
 
-// GetWithTimeout Get sends a request to the collapser and waits for the result - or times out /**
+// GetWithTimeout Get sends a request to the collapser and waits for the result - or times out
 func (m *RequestCollapser[T, P]) GetWithTimeout(ctx context.Context, param P, timeoutInMillis int64) (*T, error) {
 	var timeout time.Duration
 	if timeoutInMillis <= 0 {
@@ -154,19 +179,23 @@ func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout tim
 	select {
 	case val = <-channel:
 	case <-ctx.Done():
-		fmt.Println("context cancelled while waiting for the response")
+		m.log("RequestCollapser::doGet - context cancelled while waiting for the response")
 	case <-time.After(timeout):
-		fmt.Println("timeout waiting for the response")
+		m.log("RequestCollapser::doGet - timeout waiting for the response")
 	}
 
-	// check the result
+	// check the result that should always be initialised even if the result is nil or there was an error
 	if val == nil || val.err != nil {
+		m.log("RequestCollapser::doGet - could not get value from the collapser")
 		if m.fallbackCommand != nil {
+			m.log("RequestCollapser::doGet - invoking fallback command")
 			return m.fallbackCommand(ctx, &param)
 		}
 	}
 	if val == nil {
-		return nil, fmt.Errorf("no response from the collapser")
+		errorMessage := "no response from the collapser"
+		m.log(fmt.Sprintf("RequestCollapser::doGet - %s", errorMessage))
+		return nil, fmt.Errorf(errorMessage)
 	}
 
 	return val.result, val.err
@@ -179,10 +208,10 @@ func (m *RequestCollapser[T, P]) startRequestAcceptor() {
 	go func() {
 		for request := range m.collapserRequestsChannel { // blocks until there is a request in the channel
 			if request == nil || m.shouldStop.Load() {
+				m.log("RequestCollapser::startRequestAcceptor - stopping the acceptor")
 				break
 			}
 			requestsBatchSize := m.appendRequestToBatch(request)
-			fmt.Println("added request to batch - requestsBatchSize", requestsBatchSize)
 
 			// check if the batch is full and needs to be sent to the processor immediately
 			if m.maxBatchSize > 0 && requestsBatchSize >= m.maxBatchSize {
@@ -200,6 +229,7 @@ func (m *RequestCollapser[T, P]) startRequestProcessorTicker() {
 		time.Sleep(time.Duration(m.intervalInMilis) * time.Millisecond)
 		for {
 			if m.shouldStop.Load() {
+				m.log("RequestCollapser::startRequestProcessorTicker - stopping the ticker")
 				break
 			}
 			start := time.Now().UnixNano() / int64(time.Millisecond)
@@ -219,6 +249,7 @@ func (m *RequestCollapser[T, P]) startRequestProcessor() {
 	go func() {
 		for batch := range m.requestsProcessorNotifier { // blocks until there is a batch to process (publishers are: )
 			if batch == nil || m.shouldStop.Load() {
+				m.log("RequestCollapser::startRequestProcessor - stopping the processor")
 				break
 			}
 
@@ -231,7 +262,7 @@ func (m *RequestCollapser[T, P]) startRequestProcessor() {
 
 			results, err := m.batchCommand(ctx, params)
 			if ctx.Err() != nil {
-				fmt.Println("context error when performing batch command", ctx.Err())
+				m.log(fmt.Sprintf("RequestCollapser::startRequestProcessor - context error when performing batch command: %s ", ctx.Err()))
 				err = ctx.Err()
 			}
 			m.distributeResults(batch, results, err)
@@ -251,7 +282,7 @@ func sleepIfNeedBe(start int64, intervalInMillis int64) {
 func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T, P], results map[P]*T, err error) {
 	returningError := err
 	if returningError != nil {
-		fmt.Println("error while executing batch command", err)
+		m.log(fmt.Sprintf("RequestCollapser::distributeResults - error while executing batch command: %s ", err))
 	}
 
 	resultPointersControlMap := make(map[string]bool)
@@ -288,7 +319,7 @@ func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T,
 			result: nil,
 			err:    returningError,
 		}
-		// it is a good practice for a sender to close the channel
+		// it is a good practice for the sender to close the channel
 		close(*request.resultChannel)
 	}
 }
@@ -339,4 +370,10 @@ func (m *RequestCollapser[T, P]) appendRequestToBatch(request *collapserRequest[
 	*m.requestsBatch = append(*m.requestsBatch, request)
 	requestsBatchSize := len(*m.requestsBatch)
 	return requestsBatchSize
+}
+
+func (m *RequestCollapser[T, P]) log(message ...string) {
+	if m.diagnosticsEnabled {
+		fmt.Println(message)
+	}
 }
