@@ -12,7 +12,7 @@ getSingle = func (ctx context.Context, id *string) (*Movie, error) {
   if err != nil {
     return nil, err
   }
-	return &Movie{Genre: movie.Genre, Title: movie.Title}, nil
+  return &Movie{Genre: movie.Genre, Title: movie.Title}, nil
 }
 ```
 And if this function would be invoked a lot of times in a short period of time (with or without repeating the ids),
@@ -25,28 +25,28 @@ This is where RequestCollapser comes to play!
 First we need to create a batch function:
 ```
 getBatch = func(ctx context.Context, ids []*string) (map[string]*Movie, error) {
-		results := make(map[string]*Movie)
+    results := make(map[string]*Movie)
     movies, err := fetchMoviesFromDB(ctx, ids)
-		for _, movie := range movies {
-			results[movie.Id] = &Movie{Genre: movie.Genre, Title: movie.Title}
-		}
-		return results, nil
-	}
+    for _, movie := range movies {
+	results[movie.Id] = &Movie{Genre: movie.Genre, Title: movie.Title}
+    }
+    return results, nil
+}
 ```
 
 Then we define a request collapser with the batch function and interval in milliseconds: 
 ```
 rc, err := NewRequestCollapser[Movie, string](getBatch, 20)
-// add optional RequestCollapser configuration here...
 // handle err
+// add optional RequestCollapser configuration here...
 ```
 
-and call Start() to start collapser routines which will try to call the batch function every 20 milliseconds:
+and call Start() to start collapser routines which will call the batch function every 20 milliseconds if there were any collected requests:
 ```
 rc.Start()
 ```
 
-Then, instead of 'getSingle' function, we use collapser to get the results:
+Then, instead of 'getSingle' function, we use the collapser to get the results:
 ```
 movie, err = rc.Get(ctx, movieId)
 ```
