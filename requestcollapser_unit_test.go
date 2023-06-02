@@ -507,6 +507,37 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		assertBatchSucceeded(t, results, len(params), "batch")
 	})
 
+	t.Run("mixed operational timeouts but with fallback", func(t *testing.T) {
+		batchCommand := func(ctx context.Context, params []*string) (map[string]*TestResult, error) {
+			results := make(map[string]*TestResult)
+			for _, param := range params {
+				id := *param
+				results[*param] = &TestResult{ID: &id, Source: "batch"}
+			}
+			time.Sleep(30 * time.Millisecond)
+			return results, nil
+		}
+
+		rc, _ := NewRequestCollapser[TestResult, string](batchCommand, 500)
+		rc.WithMaxBatchSize(2)
+		rc.WithFallbackCommand(fallbackCommandSuccessful)
+		rc.Start()
+
+		params := []string{"test0", "test1", "test2", "test3"}
+		results := getTestResultsWithOperationalTimeouts(params, rc, []int64{100, 100, 10, 10})
+
+		for _, resultWithParam := range results {
+			if resultWithParam.Param == "test0" || resultWithParam.Param == "test1" {
+				assert.Equal(t, resultWithParam.Result.Source, "batch")
+			} else {
+				assert.Equal(t, resultWithParam.Result.Source, "fallback")
+			}
+			assert.Equal(t, *resultWithParam.Result.ID, resultWithParam.Param)
+			assert.NoError(t, resultWithParam.Error)
+		}
+		assert.Equal(t, len(results), 4)
+	})
+
 	t.Run("stopping the collapser", func(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithMaxBatchSize(20)
@@ -562,22 +593,31 @@ func assertBatchSucceeded(t *testing.T, results []*TestResultWithParam, resultsC
 }
 
 func getTestResults(params []string, rc *RequestCollapser[TestResult, string]) []*TestResultWithParam {
-	return doGetTestResults(params, rc, 0, 0, 0)
+	return doGetTestResults(params, rc, make([]int64, 0), 0, 0)
 }
 
 func getTestResultsWithContextTimeout(params []string, rc *RequestCollapser[TestResult, string], contextTimeout time.Duration) []*TestResultWithParam {
-	return doGetTestResults(params, rc, 0, contextTimeout, 0)
+	return doGetTestResults(params, rc, make([]int64, 0), contextTimeout, 0)
 }
 
 func getTestResultsWithOperationalTimeout(params []string, rc *RequestCollapser[TestResult, string], getOperationTimeout int64) []*TestResultWithParam {
-	return doGetTestResults(params, rc, getOperationTimeout, 0, 0)
+	getOperationTimeouts := make([]int64, len(params))
+	for i := range getOperationTimeouts {
+		getOperationTimeouts[i] = getOperationTimeout
+	}
+	return doGetTestResults(params, rc, getOperationTimeouts, 0, 0)
+}
+
+func getTestResultsWithOperationalTimeouts(params []string, rc *RequestCollapser[TestResult, string], getOperationTimeouts []int64) []*TestResultWithParam {
+	return doGetTestResults(params, rc, getOperationTimeouts, 0, 0)
 }
 
 func getTestResultsWithTimeoutBetweenRequests(params []string, rc *RequestCollapser[TestResult, string], timeoutBetweenRequests time.Duration) []*TestResultWithParam {
-	return doGetTestResults(params, rc, 0, 0, timeoutBetweenRequests)
+	return doGetTestResults(params, rc, make([]int64, 0), 0, timeoutBetweenRequests)
 }
 
-func doGetTestResults(params []string, rc *RequestCollapser[TestResult, string], getOperationTimeout int64, contextTimeout, timeoutBetweenRequests time.Duration) []*TestResultWithParam {
+func doGetTestResults(params []string, rc *RequestCollapser[TestResult, string], getOperationTimeouts []int64,
+	contextTimeout, timeoutBetweenRequests time.Duration) []*TestResultWithParam {
 	var resultsMutex = &sync.RWMutex{}
 	results := make([]*TestResultWithParam, len(params))
 	wg := sync.WaitGroup{}
@@ -592,8 +632,8 @@ func doGetTestResults(params []string, rc *RequestCollapser[TestResult, string],
 				ctx, cancel = context.WithCancel(ctx)
 				time.AfterFunc(contextTimeout*time.Millisecond, cancel)
 			}
-			if getOperationTimeout > 0 {
-				result, err = rc.GetWithTimeout(ctx, param, getOperationTimeout)
+			if len(getOperationTimeouts) > 0 {
+				result, err = rc.GetWithTimeout(ctx, param, getOperationTimeouts[index])
 			} else {
 				result, err = rc.Get(ctx, param)
 			}

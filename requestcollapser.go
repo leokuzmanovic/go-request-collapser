@@ -76,13 +76,6 @@ func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) {
 	}
 }
 
-// Provides the limit of worker go routines that are executing the batch command
-func (m *RequestCollapser[T, P]) WithMaxBatchProcessorWorkers(maxProcessorWorkers int) {
-	if maxProcessorWorkers > 0 {
-		m.requestsProcessorNotifier = make(chan *[]*collapserRequest[T, P], maxProcessorWorkers)
-	}
-}
-
 // Provides the max time to wait for the batch command to complete
 func (m *RequestCollapser[T, P]) WithBatchCommandTimeout(batchCommandCancelTimeoutMillis int64) {
 	var batchTimeout time.Duration
