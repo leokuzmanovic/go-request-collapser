@@ -8,7 +8,7 @@ It is also possible to provide a fallback function that would be invoked in case
 For example, if we would have a function that provides Movie data based on some id:
 ```
 getSingle = func (ctx context.Context, id *string) (*Movie, error) {
-	movie, err := fetchMovieFromDB(ctx, id)
+  movie, err := fetchMovieFromDB(ctx, id)
   if err != nil {
     return nil, err
   }
