@@ -46,28 +46,24 @@ var (
 	}
 )
 
-func TestUnit_RequestCollapser_invalid_batch_command(t *testing.T) {
+func TestUnit_RequestCollapser(t *testing.T) {
 	t.Run("invalid batch command", func(t *testing.T) {
 		rc, err := NewRequestCollapser[TestResult, string](nil, 100)
 		assert.Nil(t, rc)
 		assert.Error(t, err)
 	})
-}
-func TestUnit_RequestCollapser_invalid_batch_command_interval(t *testing.T) {
+
 	t.Run("invalid batch command interval", func(t *testing.T) {
 		rc, err := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 0)
 		assert.Nil(t, rc)
 		assert.Error(t, err)
 	})
-}
-
-func TestUnit_RequestCollapser(t *testing.T) {
 
 	t.Run("get one result", func(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		var result *TestResult
@@ -91,7 +87,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
@@ -117,7 +113,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test2", "test3", "test3", "test3", "test4", "test4", "test4", "test4"}
@@ -145,7 +141,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test0", "test1", "test2", "test6", "test7", "test8", "test9"}
@@ -172,7 +168,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
@@ -189,7 +185,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
@@ -205,7 +201,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
@@ -225,7 +221,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackFunction)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2"}
@@ -246,7 +242,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackFunction)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2"}
@@ -270,7 +266,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithFallbackCommand(fallbackFunction)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3"}
@@ -293,7 +289,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 10)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3"}
@@ -306,7 +302,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 100)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(4)
-		rc.WithBatchCommandCancelTimeout(0)
+		rc.WithBatchCommandTimeout(0)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
@@ -319,7 +315,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(100)
+		rc.WithBatchCommandTimeout(100)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
@@ -341,7 +337,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 10)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(5)
+		rc.WithBatchCommandTimeout(5)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
@@ -365,7 +361,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 10)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.WithMaxBatchSize(20)
-		rc.WithBatchCommandCancelTimeout(5)
+		rc.WithBatchCommandTimeout(5)
 		rc.Start()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}

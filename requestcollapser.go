@@ -78,7 +78,7 @@ func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) {
 }
 
 // Provides the max time to wait for the batch command to complete
-func (m *RequestCollapser[T, P]) WithBatchCommandCancelTimeout(batchCommandCancelTimeoutMillis int64) {
+func (m *RequestCollapser[T, P]) WithBatchCommandTimeout(batchCommandCancelTimeoutMillis int64) {
 	var batchTimeout time.Duration
 	if batchCommandCancelTimeoutMillis <= 0 {
 		batchTimeout = MAX_BATCH_TIMEOUT
