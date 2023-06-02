@@ -54,7 +54,7 @@ const (
 	// Max timeout for batch command
 	MAX_BATCH_TIMEOUT = time.Duration(2147483647) * time.Millisecond
 	// Max queue size for requests to be batched
-	MAX_QUEUE_SIZE = 2147483647
+	MAX_QUEUE_SIZE = 10000
 )
 
 // Provides the fallback command to be executed in case of batch command failure
@@ -72,8 +72,14 @@ func (m *RequestCollapser[T, P]) WithDeepCopyCommand(deepCopyCommand func(source
 // Provides the limit of requests to be batched together before triggering the batch command
 func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) {
 	if maxBatchSize > 0 {
-		m.collapserRequestsChannel = make(chan *collapserRequest[T, P], maxBatchSize)
 		m.maxBatchSize = maxBatchSize
+	}
+}
+
+// Provides the limit of worker go routines that are executing the batch command
+func (m *RequestCollapser[T, P]) WithMaxBatchProcessorWorkers(maxProcessorWorkers int) {
+	if maxProcessorWorkers > 0 {
+		m.requestsProcessorNotifier = make(chan *[]*collapserRequest[T, P], maxProcessorWorkers)
 	}
 }
 
@@ -93,26 +99,6 @@ func (m *RequestCollapser[T, P]) WithDiagnosticEnabled(diagnosticsEnabled bool) 
 	m.diagnosticsEnabled = diagnosticsEnabled
 }
 
-// Starts the collapser: starts the request acceptor, request processor ticker and request processor
-func (m *RequestCollapser[T, P]) Start() {
-	// go routine that runs in perpetual loop, accepts requests and adds them to the batch,
-	// can also (if configured) trigger the processor if the batch is full
-	m.startRequestAcceptor()
-	// go routine that runs in perpetual loop and triggers the processor every interval (if there are requests in the batch)
-	m.startRequestProcessorTicker()
-	// go routine that runs in perpetual loop and processes the batch once notified with the batch
-	m.startRequestProcessor()
-	m.log("RequestCollapser::Start - collapser started")
-}
-
-// Stops the collapser: stops the request acceptor, request processor ticker and request processor
-func (m *RequestCollapser[T, P]) Stop() {
-	m.shouldStop.Store(true)
-	m.collapserRequestsChannel <- nil
-	m.requestsProcessorNotifier <- nil
-	m.log("RequestCollapser::Stop - collapser stopped")
-}
-
 // Creates a new RequestCollapser instance
 func NewRequestCollapser[T any, P comparable](
 	batchCommand func(ctx context.Context, params []*P) (map[P]*T, error),
@@ -130,9 +116,9 @@ func NewRequestCollapser[T any, P comparable](
 		batchCommand:              batchCommand,
 		deepCopyCommand:           jsonMarshalDeepCopyCommand[T],
 		intervalInMilis:           batchCommandIntervalMillis,
-		maxBatchSize:              MAX_QUEUE_SIZE, // by default, we make it large enough to hold practically all the requests
-		collapserRequestsChannel:  make(chan *collapserRequest[T, P], MAX_QUEUE_SIZE),
-		requestsProcessorNotifier: make(chan *[]*collapserRequest[T, P], 1),
+		maxBatchSize:              MAX_QUEUE_SIZE,
+		collapserRequestsChannel:  make(chan *collapserRequest[T, P], MAX_QUEUE_SIZE),    // to avoid blocking: MAX_QUEUE_SIZE
+		requestsProcessorNotifier: make(chan *[]*collapserRequest[T, P], MAX_QUEUE_SIZE), // to avoid blocking: MAX_QUEUE_SIZE
 		requestsBatch:             &initialBatch,
 		requestsBatchMutex:        &sync.RWMutex{},
 		batchCommandCancelTimeout: MAX_BATCH_TIMEOUT, // by default, we use the MAX_BATCH_TIMEOUT
@@ -140,6 +126,26 @@ func NewRequestCollapser[T any, P comparable](
 		shouldStop:                atomic.Bool{},
 	}
 	return p, nil
+}
+
+// Starts the collapser: starts the request acceptor, request processor ticker and request processor
+func (m *RequestCollapser[T, P]) Start() {
+	// go routine that runs in perpetual loop, accepts requests and adds them to the batch,
+	// can also (if configured) trigger the processor if the batch is full
+	m.runRequestAcceptor()
+	// go routine that runs in perpetual loop and triggers the processor every interval (if there are requests in the batch)
+	m.runRequestProcessorTicker()
+	// go routine that runs in perpetual loop and processes the batch once notified with the batch
+	m.runRequestProcessor()
+	m.log("RequestCollapser::Start - collapser started")
+}
+
+// Stops the collapser: stops the request acceptor, request processor ticker and request processor
+func (m *RequestCollapser[T, P]) Stop() {
+	m.shouldStop.Store(true)
+	m.collapserRequestsChannel <- nil
+	m.requestsProcessorNotifier <- nil
+	m.log("RequestCollapser::Stop - collapser stopped")
 }
 
 func jsonMarshalDeepCopyCommand[T any](source *T) (*T, error) {
@@ -184,7 +190,7 @@ func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout tim
 		m.log("RequestCollapser::doGet - timeout waiting for the response")
 	}
 
-	// check the result that should always be initialised even if the result is nil or there was an error
+	// check the result that should always be initialised even if the batch response is nil or there was an error
 	if val == nil || val.err != nil {
 		m.log("RequestCollapser::doGet - could not get value from the collapser")
 		if m.fallbackCommand != nil {
@@ -204,11 +210,11 @@ func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout tim
 /**
  * Adds the request to the batch and checks if processor needs to be notified immediately.
  */
-func (m *RequestCollapser[T, P]) startRequestAcceptor() {
+func (m *RequestCollapser[T, P]) runRequestAcceptor() {
 	go func() {
 		for request := range m.collapserRequestsChannel { // blocks until there is a request in the channel
 			if request == nil || m.shouldStop.Load() {
-				m.log("RequestCollapser::startRequestAcceptor - stopping the acceptor")
+				m.log("RequestCollapser::runRequestAcceptor - stopping the acceptor")
 				break
 			}
 			requestsBatchSize := m.appendRequestToBatch(request)
@@ -224,12 +230,12 @@ func (m *RequestCollapser[T, P]) startRequestAcceptor() {
 	}()
 }
 
-func (m *RequestCollapser[T, P]) startRequestProcessorTicker() {
+func (m *RequestCollapser[T, P]) runRequestProcessorTicker() {
 	go func() {
 		time.Sleep(time.Duration(m.intervalInMilis) * time.Millisecond)
 		for {
 			if m.shouldStop.Load() {
-				m.log("RequestCollapser::startRequestProcessorTicker - stopping the ticker")
+				m.log("RequestCollapser::runRequestProcessorTicker - stopping the ticker")
 				break
 			}
 			start := time.Now().UnixNano() / int64(time.Millisecond)
@@ -245,27 +251,28 @@ func (m *RequestCollapser[T, P]) startRequestProcessorTicker() {
 	}()
 }
 
-func (m *RequestCollapser[T, P]) startRequestProcessor() {
-	go func() {
-		for batch := range m.requestsProcessorNotifier { // blocks until there is a batch to process (publishers are: )
+func (m *RequestCollapser[T, P]) runRequestProcessor() {
+	go func() { // listening for batches to process
+		for batch := range m.requestsProcessorNotifier { // blocks until there is a batch to process
 			if batch == nil || m.shouldStop.Load() {
-				m.log("RequestCollapser::startRequestProcessor - stopping the processor")
+				m.log("RequestCollapser::runRequestProcessor - stopping the processor")
 				break
 			}
+			go func(batch *[]*collapserRequest[T, P]) { // process the batch in a separate goroutine
+				params := getParameters(batch)
 
-			params := getParameters(batch)
+				// prepare the cancellable context for the batch command
+				var cancelTimeout = m.batchCommandCancelTimeout
+				ctx, cancel := context.WithCancel(context.Background())
+				time.AfterFunc(cancelTimeout, cancel)
 
-			// prepare the cancellable context for the batch command
-			var cancelTimeout = m.batchCommandCancelTimeout
-			ctx, cancel := context.WithCancel(context.Background())
-			time.AfterFunc(cancelTimeout, cancel)
-
-			results, err := m.batchCommand(ctx, params)
-			if ctx.Err() != nil {
-				m.log(fmt.Sprintf("RequestCollapser::startRequestProcessor - context error when performing batch command: %s ", ctx.Err()))
-				err = ctx.Err()
-			}
-			m.distributeResults(batch, results, err)
+				results, err := m.batchCommand(ctx, params)
+				if ctx.Err() != nil {
+					m.log(fmt.Sprintf("RequestCollapser::runRequestProcessor - context error when performing batch command: %s ", ctx.Err()))
+					err = ctx.Err()
+				}
+				m.distributeResults(batch, results, err)
+			}(batch)
 		}
 	}()
 }
