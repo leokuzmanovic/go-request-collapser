@@ -65,6 +65,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		var result *TestResult
 		var err error
@@ -89,6 +90,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
 		results := getTestResults(params, rc)
@@ -115,6 +117,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test2", "test3", "test3", "test3", "test4", "test4", "test4", "test4"}
 		results := getTestResults(params, rc)
@@ -143,6 +146,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test0", "test1", "test2", "test6", "test7", "test8", "test9"}
 		results := getTestResults(params, rc)
@@ -170,6 +174,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
 		results := getTestResults(params, rc)
@@ -187,6 +192,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
 		results := getTestResults(params, rc)
@@ -203,6 +209,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4", "test5", "test6", "test7", "test8", "test9"}
 		results := getTestResults(params, rc)
@@ -223,6 +230,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 		results := getTestResults(params, rc)
@@ -244,6 +252,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 		results := getTestResults(params, rc)
@@ -268,6 +277,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3"}
 		results := getTestResults(params, rc)
@@ -291,6 +301,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3"}
 		results := getTestResultsWithTimeoutBetweenRequests(params, rc, 10*time.Millisecond)
@@ -304,6 +315,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(4)
 		rc.WithBatchCommandTimeout(0)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
 		results := getTestResults(params, rc)
@@ -317,6 +329,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(100)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
 		results := getTestResults(params, rc)
@@ -339,6 +352,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(5)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
 		results := getTestResults(params, rc)
@@ -363,6 +377,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithBatchCommandTimeout(5)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
 		results := getTestResults(params, rc)
@@ -379,6 +394,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithDeepCopyCommand(copyFunction)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3", "test4"}
 		results := getTestResults(params, rc)
@@ -395,6 +411,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithDeepCopyCommand(copyFunction)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test0"}
 		results := getTestResults(params, rc)
@@ -424,6 +441,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithDeepCopyCommand(copyFunction)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test0", "test0"}
 		results := getTestResults(params, rc)
@@ -447,6 +465,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithMaxBatchSize(20)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 		results := getTestResultsWithOperationalTimeout(params, rc, 50)
@@ -467,6 +486,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithMaxBatchSize(20)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 		results := getTestResultsWithOperationalTimeout(params, rc, 50)
@@ -487,6 +507,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 20)
 		rc.WithMaxBatchSize(20)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 
@@ -500,6 +521,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(20)
 		rc.WithDiagnosticEnabled(true)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2"}
 		results := getTestResultsWithOperationalTimeout(params, rc, 50)
@@ -522,6 +544,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		rc.WithMaxBatchSize(2)
 		rc.WithFallbackCommand(fallbackCommandSuccessful)
 		rc.Start()
+		defer rc.Stop()
 
 		params := []string{"test0", "test1", "test2", "test3"}
 		results := getTestResultsWithOperationalTimeouts(params, rc, []int64{100, 100, 10, 10})
@@ -549,6 +572,68 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		results := getTestResultsWithOperationalTimeout(params, rc, 50)
 
 		assertBatchSucceeded(t, results, len(params), "batch")
+	})
+
+	t.Run("get one on stopped collapser", func(t *testing.T) {
+		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
+		rc.Start()
+		rc.Stop()
+
+		var result *TestResult
+		var err error
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		param := "param1"
+		go func() {
+			result, err = rc.Get(context.Background(), param)
+			wg.Done()
+		}()
+		wg.Wait()
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
+
+	t.Run("queue one", func(t *testing.T) {
+		batchFunction := func(ctx context.Context, params []*string) (map[string]*NO_RESULT, error) {
+			return nil, nil
+		}
+		rc, _ := NewRequestCollapser[NO_RESULT, string](batchFunction, 20)
+		rc.Start()
+		defer rc.Stop()
+
+		var err error
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			err = rc.QueueRequest("param1")
+			wg.Done()
+		}()
+		wg.Wait()
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("queue one on stopped collapser", func(t *testing.T) {
+		batchFunction := func(ctx context.Context, params []*string) (map[string]*NO_RESULT, error) {
+			return nil, nil
+		}
+		rc, _ := NewRequestCollapser[NO_RESULT, string](batchFunction, 20)
+		rc.Start()
+		rc.Stop()
+
+		var err error
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			err = rc.QueueRequest("param1")
+			wg.Done()
+		}()
+		wg.Wait()
+
+		assert.Error(t, err)
 	})
 }
 

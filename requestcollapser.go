@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gitlab.com/knowunity/go-common/pkg/errors"
 )
 
 type (
@@ -20,6 +22,8 @@ type (
 		result *T
 		err    error
 	}
+
+	NO_RESULT struct{}
 
 	// RequestCollapser allows to collapse multiple requests into one batch request.
 	RequestCollapser[T any, P comparable] struct {
@@ -164,14 +168,39 @@ func (m *RequestCollapser[T, P]) GetWithTimeout(ctx context.Context, param P, ti
 	return m.doGet(ctx, param, timeout)
 }
 
+func (m *RequestCollapser[T, P]) QueueRequest(param P) error {
+	err := m.checkIsStopped()
+	if err != nil {
+		return err
+	}
+
+	cr := &collapserRequest[T, P]{
+		param: &param,
+	}
+	return m.tryQueueRequest(param, cr)
+}
+
 func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout time.Duration) (*T, error) {
-	// send the request
+	err := m.checkIsStopped()
+	if err != nil {
+		return nil, err
+	}
+
+	// try to send the request
 	channel := make(chan *collapserResponse[T, P], 1)
 	cr := &collapserRequest[T, P]{
 		param:         &param,
 		resultChannel: &channel,
 	}
-	m.collapserRequestsChannel <- cr
+	err = m.tryQueueRequest(param, cr) // do not wait for the queue to be available, if the default queue size is not enough just try fallback
+	if err != nil {
+		m.log("RequestCollapser::doGet - could not queue request to the collapser")
+		if m.fallbackCommand != nil {
+			m.log("RequestCollapser::doGet - invoking fallback command")
+			return m.fallbackCommand(ctx, &param)
+		}
+		return nil, err
+	}
 
 	// wait for the response
 	var val *collapserResponse[T, P]
@@ -198,6 +227,28 @@ func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout tim
 	}
 
 	return val.result, val.err
+}
+
+func (m *RequestCollapser[T, P]) tryQueueRequest(param P, cr *collapserRequest[T, P]) error {
+	var sendErr error
+	select {
+	case m.collapserRequestsChannel <- cr:
+		m.log("RequestCollapser::QueueRequest - request queued")
+	default:
+		errorMessage := fmt.Sprintf("RequestCollapser::QueueRequest - collapser queue is full, dropping request: %v", param)
+		m.log(errorMessage)
+		sendErr = errors.New(errorMessage)
+	}
+	return sendErr
+}
+
+func (m *RequestCollapser[T, P]) checkIsStopped() error {
+	if m.shouldStop.Load() {
+		errorMessage := "Collapser is stopped!"
+		m.log(fmt.Sprintf("RequestCollapser::checkIsStopped - %s", errorMessage))
+		return fmt.Errorf(errorMessage)
+	}
+	return nil
 }
 
 /**
@@ -287,6 +338,10 @@ func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T,
 
 	resultPointersControlMap := make(map[string]bool)
 	for _, request := range *batch { // for each request in the batch try to find result and send it to the request channel
+		if request.resultChannel == nil {
+			m.log("RequestCollapser::distributeResults - result channel is nil, skipping the request")
+			continue
+		}
 		if results != nil && err == nil {
 			var result = results[*request.param]
 			// check if we need to make a copy of the result (is expensive in the default mode) and send it to the request channel
