@@ -159,12 +159,10 @@ func (m *RequestCollapser[T, P]) Get(ctx context.Context, param P) (*T, error) {
 
 // GetWithTimeout Get sends a request to the collapser and waits for the result - or times out
 func (m *RequestCollapser[T, P]) GetWithTimeout(ctx context.Context, param P, timeoutInMillis int64) (*T, error) {
-	var timeout time.Duration
 	if timeoutInMillis <= 0 {
-		timeout = MAX_BATCH_TIMEOUT
-	} else {
-		timeout = time.Duration(timeoutInMillis) * time.Millisecond
+		return nil, errors.New("timeoutInMillis must be greater than 0")
 	}
+	var timeout = time.Duration(timeoutInMillis) * time.Millisecond
 	return m.doGet(ctx, param, timeout)
 }
 

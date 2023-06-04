@@ -345,7 +345,8 @@ func TestUnit_RequestCollapser(t *testing.T) {
 				results[*param] = &TestResult{ID: param, Source: "test" + strconv.Itoa(index)}
 				index++
 			}
-			return results, errors.New("timeout error")
+			time.Sleep(100 * time.Millisecond)
+			return results, nil
 		}
 
 		rc, _ := NewRequestCollapser[TestResult, string](batchFunction, 10)
@@ -461,6 +462,7 @@ func TestUnit_RequestCollapser(t *testing.T) {
 
 		assertBatchSucceeded(t, results, len(params), "batch")
 	})
+
 	t.Run("get with timeout successful", func(t *testing.T) {
 		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
 		rc.WithMaxBatchSize(20)
@@ -471,6 +473,17 @@ func TestUnit_RequestCollapser(t *testing.T) {
 		results := getTestResultsWithOperationalTimeout(params, rc, 50)
 
 		assertBatchSucceeded(t, results, len(params), "batch")
+	})
+
+	t.Run("get with invalid timeout", func(t *testing.T) {
+		rc, _ := NewRequestCollapser[TestResult, string](batchCommandSuccessful, 20)
+		rc.WithMaxBatchSize(20)
+		rc.Start()
+		defer rc.Stop()
+
+		params := []string{"test0"}
+		results := getTestResultsWithOperationalTimeout(params, rc, 0)
+		assertBatchWithErrors(t, results, params)
 	})
 
 	t.Run("get with timeout unsuccessful", func(t *testing.T) {
