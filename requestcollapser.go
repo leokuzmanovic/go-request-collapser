@@ -42,7 +42,7 @@ type (
 		// Channel to notify the processor that there are requests in the batch to be processed
 		requestsProcessorNotifier chan *[]*collapserRequest[T, P]
 		// Slice of requests to be batched together
-		requestsBatch *[]*collapserRequest[T, P]
+		requestsQueue *[]*collapserRequest[T, P]
 		// Mutex to protect the batch of requests
 		requestsBatchMutex *sync.RWMutex
 		// Max time to wait for the batch command to complete
@@ -50,7 +50,9 @@ type (
 		// Flag to enable/disable diagnostics
 		diagnosticsEnabled bool
 		// Flag to stop the collapser
-		shouldStop atomic.Bool
+		shouldStop            atomic.Bool
+		allowDuplicatedParams bool
+		isRunning             bool
 	}
 )
 
@@ -62,26 +64,41 @@ const (
 )
 
 // Provides the fallback command to be executed in case of batch command failure
-func (m *RequestCollapser[T, P]) WithFallbackCommand(fallbackCommand func(ctx context.Context, param *P) (*T, error)) {
+func (m *RequestCollapser[T, P]) WithFallbackCommand(fallbackCommand func(ctx context.Context, param *P) (*T, error)) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
 	m.fallbackCommand = fallbackCommand
+	return nil
 }
 
 // Provides the command to be executed to deep copy the result of batch command
-func (m *RequestCollapser[T, P]) WithDeepCopyCommand(deepCopyCommand func(source *T) (*T, error)) {
+func (m *RequestCollapser[T, P]) WithDeepCopyCommand(deepCopyCommand func(source *T) (*T, error)) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
 	if deepCopyCommand != nil {
 		m.deepCopyCommand = deepCopyCommand
 	}
+	return nil
 }
 
 // Provides the limit of requests to be batched together before triggering the batch command
-func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) {
+func (m *RequestCollapser[T, P]) WithMaxBatchSize(maxBatchSize int) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
 	if maxBatchSize > 0 {
 		m.maxBatchSize = maxBatchSize
 	}
+	return nil
 }
 
 // Provides the max time to wait for the batch command to complete
-func (m *RequestCollapser[T, P]) WithBatchCommandTimeout(batchCommandCancelTimeoutMillis int64) {
+func (m *RequestCollapser[T, P]) WithBatchCommandTimeout(batchCommandCancelTimeoutMillis int64) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
 	var batchTimeout time.Duration
 	if batchCommandCancelTimeoutMillis <= 0 {
 		batchTimeout = MAX_BATCH_TIMEOUT
@@ -89,11 +106,24 @@ func (m *RequestCollapser[T, P]) WithBatchCommandTimeout(batchCommandCancelTimeo
 		batchTimeout = time.Duration(batchCommandCancelTimeoutMillis) * time.Millisecond
 	}
 	m.batchCommandCancelTimeout = batchTimeout
+	return nil
+}
+
+func (m *RequestCollapser[T, P]) WithAllowDuplicatedParams(allowDuplicatedParams bool) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
+	m.allowDuplicatedParams = allowDuplicatedParams
+	return nil
 }
 
 // Provides the diagnostics flag. If set, logs will be printed to stdout
-func (m *RequestCollapser[T, P]) WithDiagnosticEnabled(diagnosticsEnabled bool) {
+func (m *RequestCollapser[T, P]) WithDiagnosticEnabled(diagnosticsEnabled bool) error {
+	if m.isRunning {
+		return errors.New("collapser is already running")
+	}
 	m.diagnosticsEnabled = diagnosticsEnabled
+	return nil
 }
 
 // Creates a new RequestCollapser instance
@@ -116,17 +146,19 @@ func NewRequestCollapser[T any, P comparable](
 		maxBatchSize:              MAX_QUEUE_SIZE,
 		collapserRequestsChannel:  make(chan *collapserRequest[T, P], MAX_QUEUE_SIZE),    // to avoid blocking: MAX_QUEUE_SIZE
 		requestsProcessorNotifier: make(chan *[]*collapserRequest[T, P], MAX_QUEUE_SIZE), // to avoid blocking: MAX_QUEUE_SIZE
-		requestsBatch:             &initialBatch,
+		requestsQueue:             &initialBatch,
 		requestsBatchMutex:        &sync.RWMutex{},
 		batchCommandCancelTimeout: MAX_BATCH_TIMEOUT, // by default, we use the MAX_BATCH_TIMEOUT
 		diagnosticsEnabled:        false,
 		shouldStop:                atomic.Bool{},
+		allowDuplicatedParams:     false,
 	}
 	return p, nil
 }
 
 // Starts the collapser: starts the request acceptor, request processor ticker and request processor
 func (m *RequestCollapser[T, P]) Start() {
+	m.isRunning = true
 	// go routine that runs in perpetual loop, accepts requests and adds them to the batch,
 	// can also (if configured) trigger the processor if the batch is full
 	m.runRequestAcceptor()
@@ -139,6 +171,7 @@ func (m *RequestCollapser[T, P]) Start() {
 
 // Stops the collapser: stops the request acceptor, request processor ticker and request processor
 func (m *RequestCollapser[T, P]) Stop() {
+	m.isRunning = false
 	m.shouldStop.Store(true)
 	m.collapserRequestsChannel <- nil
 	m.requestsProcessorNotifier <- nil
@@ -301,7 +334,7 @@ func (m *RequestCollapser[T, P]) runRequestProcessor() {
 				break
 			}
 			go func(batch *[]*collapserRequest[T, P]) { // process the batch in a separate goroutine
-				params := getParameters(batch)
+				params := m.getParameters(batch)
 
 				// prepare the cancellable context for the batch command
 				var cancelTimeout = m.batchCommandCancelTimeout
@@ -377,7 +410,11 @@ func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T,
 	}
 }
 
-func getParameters[T any, P comparable](requests *[]*collapserRequest[T, P]) []*P {
+func (m *RequestCollapser[T, P]) getParameters(requests *[]*collapserRequest[T, P]) []*P {
+	if m.allowDuplicatedParams {
+		return parseParamsFromRequests(requests)
+	}
+
 	// use map to remove duplicates
 	paramMap := make(map[P]bool)
 	for _, request := range *requests {
@@ -399,6 +436,17 @@ func getParameters[T any, P comparable](requests *[]*collapserRequest[T, P]) []*
 	return params
 }
 
+func parseParamsFromRequests[T any, P comparable](requests *[]*collapserRequest[T, P]) []*P {
+	var params = make([]*P, 0, len(*requests))
+	for _, request := range *requests {
+		if request.param == nil {
+			continue
+		}
+		params = append(params, request.param)
+	}
+	return params
+}
+
 /**
  * Returns the current batch and resets the batch to an empty batch.
  */
@@ -406,13 +454,26 @@ func (m *RequestCollapser[T, P]) prepareBatchForProcessing() *[]*collapserReques
 	defer m.requestsBatchMutex.Unlock()
 	m.requestsBatchMutex.Lock()
 
-	var batch []*collapserRequest[T, P]
-	batch = *m.requestsBatch
-	if batch == nil || len(batch) <= 0 {
+	if m.requestsQueue == nil {
 		return nil
 	}
-	emptyBatch := make([]*collapserRequest[T, P], 0)
-	m.requestsBatch = &emptyBatch
+	currentQueueSize := len(*m.requestsQueue)
+	if currentQueueSize <= 0 {
+		return nil
+	}
+
+	var batch []*collapserRequest[T, P]
+	if currentQueueSize > m.maxBatchSize {
+		// NOTE: even though case is not possible right now, it could be if the maxBatchSize check is removed from appendRequestToBatch method
+		// take only the max batch size requests to the batch and remove them from the queue
+		batch = (*m.requestsQueue)[:m.maxBatchSize]
+		*m.requestsQueue = (*m.requestsQueue)[m.maxBatchSize:]
+	} else {
+		// put all requests in the batch and reset the queue
+		batch = (*m.requestsQueue)[:currentQueueSize]
+		emptyBatch := make([]*collapserRequest[T, P], 0)
+		m.requestsQueue = &emptyBatch
+	}
 	return &batch
 }
 
@@ -420,8 +481,8 @@ func (m *RequestCollapser[T, P]) appendRequestToBatch(request *collapserRequest[
 	defer m.requestsBatchMutex.Unlock()
 	m.requestsBatchMutex.Lock()
 
-	*m.requestsBatch = append(*m.requestsBatch, request)
-	requestsBatchSize := len(*m.requestsBatch)
+	*m.requestsQueue = append(*m.requestsQueue, request)
+	requestsBatchSize := len(*m.requestsQueue)
 	return requestsBatchSize
 }
 
