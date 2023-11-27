@@ -2,6 +2,7 @@ package requestcollapser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"gitlab.com/knowunity/go-common/pkg/errors"
 )
 
 type TestResult struct {

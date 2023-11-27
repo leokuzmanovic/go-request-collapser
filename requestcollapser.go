@@ -3,12 +3,11 @@ package requestcollapser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"gitlab.com/knowunity/go-common/pkg/errors"
 )
 
 type (
