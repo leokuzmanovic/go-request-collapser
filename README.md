@@ -1,66 +1,92 @@
-# go-request-collapser
-Inspired by Netflix Hystrix Collapser, this is a stateless library writen in Go that facilitates collapsing multiple requests into a single batch call based on 
-the configured time frame or max batch size.
+# Request Collapser
 
-Collapser is instantiated by providing the batch function and time interval at which it would be invoked. 
-It is also possible to provide a fallback function that would be invoked in case the batch command returns an error. 
+## Overview
 
-For example, if we would have a function that provides Movie data based on some id:
-```
-getSingle = func (ctx context.Context, id *string) (*Movie, error) {
-  movie, err := fetchMovieFromDB(ctx, id)
-  if err != nil {
-    return nil, err
-  }
-  return &Movie{Genre: movie.Genre, Title: movie.Title}, nil
+The `requestcollapser` package provides a mechanism to collapse multiple requests into one batch request. This can be useful for optimizing and reducing the number of calls made to an external service.
+
+## Types
+
+### `collapserRequest[T any, P comparable]`
+
+Represents a request to be collapsed, containing the parameter (`param`) and a channel (`resultChannel`) to receive the response.
+
+### `collapserResponse[T any, P comparable]`
+
+Represents the response for a collapsed request, containing the parameter (`param`), the result (`result`), and any potential error (`err`).
+
+### `RequestCollapser[T any, P comparable]`
+
+The main struct that encapsulates the functionality of collapsing requests. It has various configuration options and methods for managing the collapser.
+
+## Constants
+
+- `MAX_BATCH_TIMEOUT`: The maximum timeout for the batch command.
+- `MAX_QUEUE_SIZE`: The maximum queue size for requests to be batched.
+
+## Methods
+
+### Configuration Methods
+
+- `WithFallbackCommand`: Provides the fallback command to be executed in case of batch command failure.
+- `WithDeepCopyCommand`: Provides the command to be executed to deep copy the result of the batch command.
+- `WithMaxBatchSize`: Provides the limit of requests to be batched together before triggering the batch command.
+- `WithBatchCommandTimeout`: Provides the max time to wait for the batch command to complete.
+- `WithAllowDuplicatedParams`: Allows or disallows duplicated parameters in the batch.
+- `WithDiagnosticEnabled`: Enables or disables diagnostics logging.
+
+### Constructor Method
+
+- `NewRequestCollapser`: Creates a new `RequestCollapser` instance with the specified batch command and interval.
+
+### Lifecycle Methods
+
+- `Start`: Starts the collapser, initiating the request acceptor, request processor ticker, and request processor.
+- `Stop`: Stops the collapser, closing channels and notifying goroutines to terminate.
+
+### Request Methods
+
+- `Get`: Sends a request to the collapser and waits for the result.
+- `GetWithTimeout`: Sends a request to the collapser and waits for the result with a specified timeout.
+- `QueueRequest`: Queues a request to be processed asynchronously.
+
+## Example Usage
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+func main() {
+	// Define a batch command
+	batchCommand := func(ctx context.Context, params []*int) (map[int]*string, error) {
+		// Implementation of the batch command
+		// ...
+		return nil, nil
+	}
+
+	// Create a new RequestCollapser instance
+	collapser, err := requestcollapser.NewRequestCollapser(batchCommand, 100)
+	if err != nil {
+		fmt.Println("Error creating RequestCollapser:", err)
+		return
+	}
+
+	// Start the collapser
+	collapser.Start()
+
+	// Send requests to the collapser
+	result, err := collapser.Get(context.Background(), 42)
+	if err != nil {
+		fmt.Println("Error getting result:", err)
+		return
+	}
+
+	// Stop the collapser
+	collapser.Stop()
+
+	fmt.Println("Result:", result)
 }
-```
-And if this function would be invoked a lot of times in a short period of time (with or without repeating the ids),
-we would need to execute a lot of DB queries to get all of those movie responses.
-
-What we want is to have the ability to batch these requests and do one batch call to the DB after which the results (if existing) would be passed back to callers.
-
-This is where RequestCollapser comes to play!
-
-First we need to create a batch function:
-```
-getBatch = func(ctx context.Context, ids []*string) (map[string]*Movie, error) {
-    results := make(map[string]*Movie)
-    movies, err := fetchMoviesFromDB(ctx, ids)
-    for _, movie := range movies {
-	results[movie.Id] = &Movie{Genre: movie.Genre, Title: movie.Title}
-    }
-    return results, nil
-}
-```
-
-Then we define a request collapser with the batch function and interval in milliseconds: 
-```
-rc, err := NewRequestCollapser[Movie, string](getBatch, 20)
-// handle err
-// add optional RequestCollapser configuration here...
-```
-
-and call Start() to start collapser routines which will call the batch function every 20 milliseconds if there were any collected requests:
-```
-rc.Start()
-```
-
-Then, instead of 'getSingle' function, we use the collapser to get the results:
-```
-movie, err = rc.Get(ctx, movieId)
-```
-
-Optionally, we could add additional configuration to the collapser:
-```
-rc.WithFallbackCommand(getSingle) // Provides the fallback command to be executed in case of batch command failure 
-rc.WithMaxBatchSize(100) // Provides the limit of requests to be batched together before triggering the batch command
-rc.WithBatchCommandTimeout(0) // Provides the max time to wait for the batch command to complete
-rc.WithDeepCopyCommand(copyFunction) // Provides the command to be executed to deep copy the result of batch command
-rc.WithDiagnosticEnabled(true) // Provides the diagnostics flag. If set, RequestCollapser logs will be printed to stdout
-```
-
-
-
-
-  
