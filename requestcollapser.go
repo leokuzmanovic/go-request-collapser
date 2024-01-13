@@ -39,9 +39,9 @@ type (
 		// Channel to accept requests
 		collapserRequestsChannel chan *collapserRequest[T, P]
 		// Channel to notify the processor that there are requests in the batch to be processed
-		requestsProcessorNotifier chan *[]*collapserRequest[T, P]
+		requestsProcessorNotifier chan []*collapserRequest[T, P]
 		// Slice of requests to be batched together
-		requestsQueue *[]*collapserRequest[T, P]
+		requestsQueue []*collapserRequest[T, P]
 		// Mutex to protect the batch of requests
 		requestsBatchMutex *sync.RWMutex
 		// Max time to wait for the batch command to complete
@@ -143,9 +143,9 @@ func NewRequestCollapser[T any, P comparable](
 		deepCopyCommand:           jsonMarshalDeepCopyCommand[T],
 		intervalInMilis:           batchCommandIntervalMillis,
 		maxBatchSize:              MAX_QUEUE_SIZE,
-		collapserRequestsChannel:  make(chan *collapserRequest[T, P], MAX_QUEUE_SIZE),    // to avoid blocking: MAX_QUEUE_SIZE
-		requestsProcessorNotifier: make(chan *[]*collapserRequest[T, P], MAX_QUEUE_SIZE), // to avoid blocking: MAX_QUEUE_SIZE
-		requestsQueue:             &initialBatch,
+		collapserRequestsChannel:  make(chan *collapserRequest[T, P], MAX_QUEUE_SIZE),   // to avoid blocking: MAX_QUEUE_SIZE
+		requestsProcessorNotifier: make(chan []*collapserRequest[T, P], MAX_QUEUE_SIZE), // to avoid blocking: MAX_QUEUE_SIZE
+		requestsQueue:             initialBatch,
 		requestsBatchMutex:        &sync.RWMutex{},
 		batchCommandCancelTimeout: MAX_BATCH_TIMEOUT, // by default, we use the MAX_BATCH_TIMEOUT
 		diagnosticsEnabled:        false,
@@ -296,7 +296,7 @@ func (m *RequestCollapser[T, P]) runRequestAcceptor() {
 			// check if the batch is full and needs to be sent to the processor immediately
 			if m.maxBatchSize > 0 && requestsBatchSize >= m.maxBatchSize {
 				batch := m.prepareBatchForProcessing()
-				if batch != nil && len(*batch) > 0 { // double check that the batch is not empty (because of concurrency)
+				if batch != nil && len(batch) > 0 { // double check that the batch is not empty (because of concurrency)
 					m.requestsProcessorNotifier <- batch
 				}
 			}
@@ -314,7 +314,7 @@ func (m *RequestCollapser[T, P]) runRequestProcessorTicker() {
 			}
 			start := time.Now().UnixNano() / int64(time.Millisecond)
 			batch := m.prepareBatchForProcessing()
-			if batch == nil || len(*batch) <= 0 { // double check that the batch is not empty (because of concurrency)
+			if batch == nil || len(batch) <= 0 { // double check that the batch is not empty (because of concurrency)
 				sleepIfNeedBe(start, m.intervalInMilis)
 				continue
 			}
@@ -332,7 +332,7 @@ func (m *RequestCollapser[T, P]) runRequestProcessor() {
 				m.log("RequestCollapser::runRequestProcessor - stopping the processor")
 				break
 			}
-			go func(batch *[]*collapserRequest[T, P]) { // process the batch in a separate goroutine
+			go func(batch []*collapserRequest[T, P]) { // process the batch in a separate goroutine
 				params := m.getParameters(batch)
 
 				// prepare the cancellable context for the batch command
@@ -360,14 +360,14 @@ func sleepIfNeedBe(start int64, intervalInMillis int64) {
 	}
 }
 
-func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T, P], results map[P]*T, err error) {
+func (m *RequestCollapser[T, P]) distributeResults(batch []*collapserRequest[T, P], results map[P]*T, err error) {
 	returningError := err
 	if returningError != nil {
 		m.log(fmt.Sprintf("RequestCollapser::distributeResults - error while executing batch command: %s ", err))
 	}
 
 	resultPointersControlMap := make(map[string]bool)
-	for _, request := range *batch { // for each request in the batch try to find result and send it to the request channel
+	for _, request := range batch { // for each request in the batch try to find result and send it to the request channel
 		if request.resultChannel == nil {
 			m.log("RequestCollapser::distributeResults - result channel is nil, skipping the request")
 			continue
@@ -409,14 +409,14 @@ func (m *RequestCollapser[T, P]) distributeResults(batch *[]*collapserRequest[T,
 	}
 }
 
-func (m *RequestCollapser[T, P]) getParameters(requests *[]*collapserRequest[T, P]) []*P {
+func (m *RequestCollapser[T, P]) getParameters(requests []*collapserRequest[T, P]) []*P {
 	if m.allowDuplicatedParams {
 		return parseParamsFromRequests(requests)
 	}
 
 	// use map to remove duplicates
 	paramMap := make(map[P]bool)
-	for _, request := range *requests {
+	for _, request := range requests {
 		if request.param == nil {
 			continue
 		}
@@ -435,9 +435,9 @@ func (m *RequestCollapser[T, P]) getParameters(requests *[]*collapserRequest[T, 
 	return params
 }
 
-func parseParamsFromRequests[T any, P comparable](requests *[]*collapserRequest[T, P]) []*P {
-	var params = make([]*P, 0, len(*requests))
-	for _, request := range *requests {
+func parseParamsFromRequests[T any, P comparable](requests []*collapserRequest[T, P]) []*P {
+	var params = make([]*P, 0, len(requests))
+	for _, request := range requests {
 		if request.param == nil {
 			continue
 		}
@@ -449,14 +449,14 @@ func parseParamsFromRequests[T any, P comparable](requests *[]*collapserRequest[
 /**
  * Returns the current batch and resets the batch to an empty batch.
  */
-func (m *RequestCollapser[T, P]) prepareBatchForProcessing() *[]*collapserRequest[T, P] {
+func (m *RequestCollapser[T, P]) prepareBatchForProcessing() []*collapserRequest[T, P] {
 	defer m.requestsBatchMutex.Unlock()
 	m.requestsBatchMutex.Lock()
 
 	if m.requestsQueue == nil {
 		return nil
 	}
-	currentQueueSize := len(*m.requestsQueue)
+	currentQueueSize := len(m.requestsQueue)
 	if currentQueueSize <= 0 {
 		return nil
 	}
@@ -465,23 +465,23 @@ func (m *RequestCollapser[T, P]) prepareBatchForProcessing() *[]*collapserReques
 	if currentQueueSize > m.maxBatchSize {
 		// NOTE: even though case is not possible right now, it could be if the maxBatchSize check is removed from appendRequestToBatch method
 		// take only the max batch size requests to the batch and remove them from the queue
-		batch = (*m.requestsQueue)[:m.maxBatchSize]
-		*m.requestsQueue = (*m.requestsQueue)[m.maxBatchSize:]
+		batch = (m.requestsQueue)[:m.maxBatchSize]
+		m.requestsQueue = (m.requestsQueue)[m.maxBatchSize:]
 	} else {
 		// put all requests in the batch and reset the queue
-		batch = (*m.requestsQueue)[:currentQueueSize]
+		batch = (m.requestsQueue)[:currentQueueSize]
 		emptyBatch := make([]*collapserRequest[T, P], 0)
-		m.requestsQueue = &emptyBatch
+		m.requestsQueue = emptyBatch
 	}
-	return &batch
+	return batch
 }
 
 func (m *RequestCollapser[T, P]) appendRequestToBatch(request *collapserRequest[T, P]) int {
 	defer m.requestsBatchMutex.Unlock()
 	m.requestsBatchMutex.Lock()
 
-	*m.requestsQueue = append(*m.requestsQueue, request)
-	requestsBatchSize := len(*m.requestsQueue)
+	m.requestsQueue = append(m.requestsQueue, request)
+	requestsBatchSize := len(m.requestsQueue)
 	return requestsBatchSize
 }
 

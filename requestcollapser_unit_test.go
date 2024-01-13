@@ -787,7 +787,7 @@ func doGetTestResults(params []string, rc *RequestCollapser[TestResult, string],
 	wg := sync.WaitGroup{}
 	wg.Add(len(params))
 	for i, param := range params {
-		go func(index int, param string, resultsMutex *sync.RWMutex, results *[]*TestResultWithParam) {
+		go func(index int, param string, resultsMutex *sync.RWMutex, results []*TestResultWithParam) {
 			var result *TestResult
 			var err error
 			ctx := context.Background()
@@ -813,10 +813,10 @@ func doGetTestResults(params []string, rc *RequestCollapser[TestResult, string],
 			}
 			t.Param = param
 			resultsMutex.Lock()
-			(*results)[index] = &t
+			(results)[index] = &t
 			resultsMutex.Unlock()
 			wg.Done()
-		}(i, param, resultsMutex, &results)
+		}(i, param, resultsMutex, results)
 		time.Sleep(timeoutBetweenRequests)
 	}
 	wg.Wait()
