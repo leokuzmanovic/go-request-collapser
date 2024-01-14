@@ -13,7 +13,7 @@ import (
 type (
 	collapserRequest[T any, P comparable] struct {
 		param         *P
-		resultChannel *chan *collapserResponse[T, P]
+		resultChannel chan *collapserResponse[T, P]
 	}
 
 	collapserResponse[T any, P comparable] struct {
@@ -220,7 +220,7 @@ func (m *RequestCollapser[T, P]) doGet(ctx context.Context, param P, timeout tim
 	channel := make(chan *collapserResponse[T, P], 1)
 	cr := &collapserRequest[T, P]{
 		param:         &param,
-		resultChannel: &channel,
+		resultChannel: channel,
 	}
 	err = m.tryQueueRequest(param, cr) // do not wait for the queue to be available, if the default queue size is not enough just try fallback
 	if err != nil {
@@ -388,7 +388,7 @@ func (m *RequestCollapser[T, P]) distributeResults(batch []*collapserRequest[T, 
 			resultPointersControlMap[resultPointerAddress] = true
 
 			if copyError == nil {
-				*request.resultChannel <- &collapserResponse[T, P]{
+				request.resultChannel <- &collapserResponse[T, P]{
 					param:  request.param,
 					result: newResult,
 					err:    returningError,
@@ -399,13 +399,13 @@ func (m *RequestCollapser[T, P]) distributeResults(batch []*collapserRequest[T, 
 			}
 		}
 		// could not get the proper response
-		*request.resultChannel <- &collapserResponse[T, P]{
+		request.resultChannel <- &collapserResponse[T, P]{
 			param:  request.param,
 			result: nil,
 			err:    returningError,
 		}
 		// it is a good practice for the sender to close the channel
-		close(*request.resultChannel)
+		close(request.resultChannel)
 	}
 }
 
